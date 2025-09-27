@@ -1,44 +1,51 @@
-<!doctype html>
-<meta charset="utf-8" />
-<div id="passage"></div>
-<div id="task"></div>
-<script>
-const topics = {
-  technology: {
-    nouns: ["innovation","automation","privacy","infrastructure"],
-    verbs: ["facilitate","undermine","accelerate","allocate"],
-    adjs: ["prevalent","controversial","transformative","costly"],
-    effects: ["inequality","efficiency","data breaches","job displacement"]
-  }
-};
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DET Practice</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    h1 { color: #333; }
+    #task { margin-top: 20px; font-size: 18px; }
+    input { padding: 5px; font-size: 16px; }
+    button { margin-top: 10px; padding: 6px 12px; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Read & Complete Practice</h1>
+  <p>Заполни пропуск:</p>
+  <div id="task"></div>
+  <input id="answer" type="text" placeholder="Ваш ответ">
+  <button onclick="checkAnswer()">Проверить</button>
+  <button onclick="generateTask()">Новое задание</button>
+  <p id="result"></p>
 
-function rand(arr){return arr[Math.floor(Math.random()*arr.length)]}
+  <script>
+    const tasks = [
+      {text: "In recent years, _____ has become increasingly important in education.", answer: "technology"},
+      {text: "One reason people _____ English is to study or work abroad.", answer: "learn"},
+      {text: "Technology can _____ communication but also cause distraction.", answer: "improve"}
+    ];
 
-function genParagraph(topic="technology"){
-  const t = topics[topic];
-  const s1 = `In recent years, ${topic} has become increasingly ${rand(t.adjs)}.`;
-  const s2 = `One key reason is that ${rand(t.nouns)} can ${rand(t.verbs)} critical processes.`;
-  const s3 = `As a result, communities may experience ${rand(t.effects)}.`;
-  const s4 = `For instance, ${rand(t.nouns)} often ${rand(t.verbs)} public services.`;
-  const s5 = `Overall, the benefits tend to outweigh the drawbacks in most contexts.`;
-  return [s1,s2,s3,s4,s5].join(' ');
-}
+    let currentTask;
 
-function makeCloze(p){
-  const tokens = p.split(' ');
-  const maskIdx = [];
-  for (let i=0;i<tokens.length;i++){
-    const w = tokens[i].toLowerCase().replace(/[^a-z]/g,'');
-    if (["the","a","an","in","on","at","of","for","to"].includes(w) || /ly$/.test(w)){
-      if (Math.random()<0.25) maskIdx.push(i);
+    function generateTask() {
+      currentTask = tasks[Math.floor(Math.random() * tasks.length)];
+      document.getElementById("task").innerText = currentTask.text;
+      document.getElementById("answer").value = "";
+      document.getElementById("result").innerText = "";
     }
-  }
-  maskIdx.forEach(i => tokens[i] = "_____");
-  return {text: tokens.join(' '), hidden: maskIdx};
-}
 
-const para = genParagraph();
-const cloze = makeCloze(para);
-document.getElementById('passage').innerText = para;
-document.getElementById('task').innerText = cloze.text;
-</script>
+    function checkAnswer() {
+      const userAnswer = document.getElementById("answer").value.trim().toLowerCase();
+      if (userAnswer === currentTask.answer) {
+        document.getElementById("result").innerText = "✅ Правильно!";
+      } else {
+        document.getElementById("result").innerText = "❌ Неправильно. Правильный ответ: " + currentTask.answer;
+      }
+    }
+
+    generateTask();
+  </script>
+</body>
+</html>
