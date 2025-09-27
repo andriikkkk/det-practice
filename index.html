@@ -2,194 +2,322 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>DET Practice — AI Cloze</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DET Practice — Unique Task Generator</title>
   <style>
-    :root { color-scheme: dark light; }
-    body { font-family: system-ui, Arial, sans-serif; margin: 40px; max-width: 900px; }
-    h1 { margin: 0 0 6px; }
-    p.hint { margin: 6px 0 20px; color: #666; }
-    #passage { margin: 14px 0 8px; font-size: 18px; line-height: 1.6; }
-    #task { margin: 8px 0 16px; font-size: 20px; line-height: 1.7; }
-    input, button { font-size: 16px; padding: 10px 12px; }
-    input { min-width: 220px; }
-    button { margin-right: 8px; cursor: pointer; }
-    #result { margin-top: 10px; font-weight: 600; }
-    .muted { color:#777; font-size: 14px; }
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 32px; line-height: 1.5; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .sub { margin: 0 0 16px; color: #666; font-size: 14px; }
+    .bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 10px; }
+    button { padding: 10px 14px; border: 0; border-radius: 10px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    button.primary { background: #4f46e5; color: #fff; }
+    button.secondary { background: #e5e7eb; }
+    button.ghost { background: transparent; border: 1px solid #e5e7eb; }
+    .tag { display:inline-block; padding:2px 8px; background:#f3f4f6; border-radius:999px; font-size:12px; margin-left:8px; }
+    #type { font-weight: 700; }
+    #taskArea { background: #f9fafb; padding: 16px; border-radius: 14px; min-height: 110px; }
+    .cloze input { width: 110px; padding: 6px 8px; font-size: 16px; margin: 2px 4px; }
+    .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 8px; }
+    .opt { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; cursor: pointer; user-select: none; }
+    .opt.selected { outline: 2px solid #4f46e5; }
+    .muted { color:#6b7280; font-size: 13px; }
+    #feedback { margin-top: 10px; font-weight: 600; }
     code { background: rgba(127,127,127,.12); padding: 2px 6px; border-radius: 6px; }
   </style>
 </head>
 <body>
-  <h1>Read & Complete — AI Generator</h1>
-  <p class="hint">Каждый раз генерируется новый абзац. Заполни пропуск и нажми «Проверить».</p>
+  <h1>DET Practice — Unique Task Generator</h1>
+  <p class="sub">Каждый клик «Новое задание» создаёт <b>новое, ещё не встречавшееся</b> упражнение. Уникальность хранится в <code>localStorage</code> на твоём устройстве.</p>
 
-  <div id="passage" class="muted"></div>
-  <div id="task"></div>
+  <div class="bar">
+    <button id="newBtn" class="primary">Новое задание</button>
+    <button id="checkBtn" class="secondary">Проверить</button>
+    <button id="revealBtn" class="ghost">Показать ответ</button>
+    <button id="resetBtn" class="ghost">Сбросить историю уникальности</button>
+  </div>
 
-  <input id="answer" type="text" placeholder="Ваш ответ" autocomplete="off" />
-  <button id="checkBtn">Проверить</button>
-  <button id="newBtn">Новое задание</button>
-  <div id="result"></div>
+  <div id="meta" class="muted">Тип: <span id="type">—</span> <span class="tag" id="topicTag"></span></div>
+  <div id="taskArea">Нажми «Новое задание»</div>
+  <div id="feedback"></div>
 
   <script>
-    // ===== 1) Мини-"ИИ": марковский генератор текста =====
-    // Небольшой корпус предложений (наши, без авторских прав), на разные темы.
-    const CORPUS = `
-Education often relies on evidence based methods and systematic practice.
-Modern technology enables global communication and rapid information exchange.
-Researchers argue that privacy and security must remain a priority in digital policy.
-Environmental studies indicate that urban design can reduce emissions and improve health.
-Public health campaigns raise awareness and encourage preventive behaviour in society.
-Universities foster innovation, collaboration and critical thinking among students.
-Economic reports suggest that automation increases efficiency but may displace certain jobs.
-Cultural institutions preserve heritage while supporting creative expression and dialogue.
-Scientific analysis requires reliable data, transparent methods and careful interpretation.
-Ethical guidelines help organizations balance profit with social responsibility.
-Access to quality education significantly impacts mobility and long term wellbeing.
-Media literacy empowers citizens to evaluate sources and detect misinformation.
-Government programs allocate resources to infrastructure and community development.
-Clinical research investigates effective treatment and monitors potential side effects.
-Sustainable transport policies promote safety, equity and environmental benefits.
-Digital tools facilitate remote learning yet also introduce distraction and inequality.
-`;
+    // ===============================
+    // 0) Уникальность: хранение в localStorage
+    // ===============================
+    const STORE_KEY = 'det_unique_tasks_v1';
+    let USED = new Set(JSON.parse(localStorage.getItem(STORE_KEY) || '[]'));
+    function remember(key){ USED.add(key); // ограничим размер до 5000
+      if (USED.size > 5000) USED = new Set(Array.from(USED).slice(-5000));
+      localStorage.setItem(STORE_KEY, JSON.stringify(Array.from(USED))); }
+    function isUsed(key){ return USED.has(key); }
 
-    // Построение марковской цепи (порядок 2 — биграммы)
-    function buildMarkov(corpus, order = 2) {
-      const tokens = corpus.trim().split(/\s+/);
+    // ===============================
+    // 1) Данные для генерации (темы + словари)
+    // ===============================
+    const TOPICS = [
+      'technology','education','environment','health','culture','economy','transport','privacy',
+      'art','media','psychology','urban planning','energy','agriculture','space','sports','climate','tourism','ethics','AI'
+    ];
+
+    const AWL = [
+      'evidence','systematic','practice','communication','information','exchange','privacy','security','policy','environmental','indicate','urban','reduce','emissions','improve','health','campaign','awareness','preventive','behaviour','innovation','collaboration','critical','thinking','automation','efficiency','displace','institution','heritage','expression','dialogue','analysis','reliable','transparent','interpretation','ethical','guideline','responsibility','mobility','wellbeing','literacy','evaluate','misinformation','allocate','infrastructure','development','clinical','treatment','sustainable','transport','equity','benefit','digital','facilitate','remote','inequality','dataset','framework','method','factor','impact','significant','approach','issue','context','assess','derive','establish','consent','monitor','exposure','outcome','variable'
+    ];
+
+    const NOUNS = [
+      'technology','education','communication','innovation','privacy','infrastructure','biodiversity','community','policy','curriculum','algorithm','platform','battery','ecosystem','transport','research','treatment','heritage','workforce','device','network','data','model','analysis','museum','farm','telescope','stadium','sensor','initiative','scholarship'
+    ];
+    const VERBS = ['improve','undermine','facilitate','accelerate','affect','generate','reduce','support','monitor','allocate','challenge','reshape','promote','restrict','transform','enhance'];
+    const ADJ = ['important','controversial','transformative','beneficial','harmful','essential','scalable','ethical','sustainable','efficient','inclusive','accessible'];
+    const EFFECTS = ['efficiency','inequality','opportunities','distraction','wellbeing','awareness','costs','risks','growth','participation','trust'];
+    const ACTORS = ['students','teachers','engineers','researchers','doctors','designers','policymakers','parents','citizens','athletes','artists'];
+    const LOCS = ['in schools','in hospitals','in cities','in rural areas','online','in laboratories','in museums','on campuses','at home'];
+    const TIME = ['nowadays','in recent years','since 2020','this decade','over the last few years'];
+
+    // ===============================
+    // 2) Вспомогательные функции
+    // ===============================
+    const rand = (arr)=> arr[Math.floor(Math.random()*arr.length)];
+    const cap = (s)=> s.charAt(0).toUpperCase()+s.slice(1);
+    const hash = (s)=>{ // простая 32-битная хеш-функция (FNV-1a)
+      let h = 0x811c9dc5; for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = (h + ((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0; } return ('00000000'+h.toString(16)).slice(-8);
+    };
+
+    // ===============================
+    // 3) Генерация текста (грамматика + мини-марков)
+    // ===============================
+    const CORPUS = `Education often relies on evidence based methods and systematic practice. Modern technology enables global communication and rapid information exchange. Researchers argue that privacy and security must remain a priority in digital policy. Environmental studies indicate that urban design can reduce emissions and improve health. Public health campaigns raise awareness and encourage preventive behaviour in society. Universities foster innovation, collaboration and critical thinking among students. Economic reports suggest that automation increases efficiency but may displace certain jobs. Cultural institutions preserve heritage while supporting creative expression and dialogue. Scientific analysis requires reliable data, transparent methods and careful interpretation. Ethical guidelines help organizations balance profit with social responsibility. Access to quality education significantly impacts mobility and long term wellbeing. Media literacy empowers citizens to evaluate sources and detect misinformation. Government programs allocate resources to infrastructure and community development. Clinical research investigates effective treatment and monitors potential side effects. Sustainable transport policies promote safety, equity and environmental benefits. Digital tools facilitate remote learning yet also introduce distraction and inequality.`;
+
+    function buildMarkov(order=2){
+      const tokens = CORPUS.split(/\s+/);
       const model = new Map();
-      for (let i = 0; i <= tokens.length - order; i++) {
-        const state = tokens.slice(i, i + order).join(" ");
-        const next = tokens[i + order];
-        if (!model.has(state)) model.set(state, []);
-        model.get(state).push(next);
+      for(let i=0;i<=tokens.length-order;i++){
+        const key = tokens.slice(i,i+order).join(' ');
+        const next = tokens[i+order];
+        if(!model.has(key)) model.set(key,[]);
+        model.get(key).push(next);
       }
-      return { model, order, tokens };
+      return {model,order,tokens};
+    }
+    const MARKOV = buildMarkov(2);
+
+    function genMarkovSentence(minLen=12,maxLen=26){
+      const {model,order,tokens} = MARKOV;
+      let idx = Math.floor(Math.random()*(tokens.length-order-1));
+      let state = tokens.slice(idx, idx+order);
+      for (let guard=0; guard<50 && !/^[A-Z]/.test(state[0]); guard++){
+        idx = Math.floor(Math.random()*(tokens.length-order-1));
+        state = tokens.slice(idx, idx+order);
+      }
+      const out=[...state];
+      while(out.length<maxLen){
+        const key = state.join(' '); const opts = model.get(key); if(!opts) break;
+        const next = rand(opts); out.push(next); state = [...state.slice(1), next];
+        if(out.length>=minLen && /[.!?]$/.test(next)) break;
+      }
+      let s = out.join(' ').replace(/\s+([,.;:!?])/g,'$1');
+      if(!/[.!?]$/.test(s)) s += '.'; return s;
     }
 
-    function generateSentence(markov, minLen = 12, maxLen = 28) {
-      const { model, order, tokens } = markov;
-      // стартуем с случайного состояния, начинающегося с заглавной буквы
-      let startIndex = Math.floor(Math.random() * (tokens.length - order - 1));
-      let state = tokens.slice(startIndex, startIndex + order);
-      // делаем так, чтобы первая буква была заглавной
-      for (let guard = 0; guard < 50 && !/^[A-Z]/.test(state[0]); guard++) {
-        startIndex = Math.floor(Math.random() * (tokens.length - order - 1));
-        state = tokens.slice(startIndex, startIndex + order);
-      }
+    function genTemplateSentence(topic){
+      const s1 = `${cap(rand(TIME))}, ${topic} has become increasingly ${rand(ADJ)} ${rand(LOCS)}.`;
+      const s2 = `One key reason is that ${rand(NOUNS)} can ${rand(VERBS)} ${rand(NOUNS)}.`;
+      const s3 = `As a result, ${rand(ACTORS)} may experience ${rand(EFFECTS)}.`;
+      const s4 = `For instance, ${cap(rand(NOUNS))} often ${rand(VERBS)} public services.`;
+      const s5 = `Overall, the benefits tend to outweigh the drawbacks in most contexts.`;
+      const pool = [s1,s2,s3,s4,s5, genMarkovSentence(), genMarkovSentence()];
+      return rand(pool);
+    }
 
-      const out = [...state];
-      while (out.length < maxLen) {
-        const key = state.join(" ");
-        const options = model.get(key);
-        if (!options) break;
-        const next = options[Math.floor(Math.random() * options.length)];
-        out.push(next);
-        state = [...state.slice(1), next];
-        if (out.length >= minLen && /[.!?]$/.test(next)) break;
+    function genParagraph(){
+      const topic = rand(TOPICS);
+      const sentences = [genTemplateSentence(topic), genTemplateSentence(topic), genTemplateSentence(topic)];
+      const paragraph = sentences.join(' ');
+      return { topic, paragraph };
+    }
+
+    // ===============================
+    // 4) Типы заданий
+    // ===============================
+    function buildCloze(p){
+      // выберем 3-5 слов для пропусков: приоритет — из AWL
+      const tokens = p.split(/(\b)/); // сохраним пунктуацию
+      const words = tokens.map((t,i)=>({i,t,raw:t.toLowerCase()})).filter(x=>/^[a-z][a-z-]*$/.test(x.raw));
+      const candidates = words.filter(w=> AWL.includes(w.raw));
+      const pool = (candidates.length? candidates : words.filter(w=>w.raw.length>=6)).map(w=>w.i);
+      const blanks = new Set();
+      while (blanks.size < Math.min(5, Math.max(3, Math.floor(pool.length/10)))){
+        blanks.add(pool[Math.floor(Math.random()*pool.length)]);
+        if (blanks.size>10) break;
       }
-      // Чистим пробелы перед пунктуацией
-      let sentence = out.join(" ")
-        .replace(/\s+([,.;:!?])/g, "$1")
-        .replace(/\s+/g, " ");
-      // Если нет финальной точки — добавим.
-      if (!/[.!?]$/.test(sentence)) sentence += ".";
+      const answers = [];
+      const map = new Map();
+      Array.from(blanks).sort((a,b)=>a-b).forEach(idx=>{
+        const ans = tokens[idx]; answers.push(ans);
+        const key = `__BLANK_${answers.length}__`;
+        map.set(idx,key); tokens[idx] = `<input data-ans="${ans}" />`;
+      });
+      return { html: tokens.map((t)=> map.has(t)? map.get(t): t).join(''), answers };
+    }
+
+    function buildSelect(){
+      // Read & Select: 12 слов, 5-7 настоящих + псевдослов
+      const real = sampleUnique(AWL, 6 + Math.floor(Math.random()*2));
+      const fake = [];
+      while(fake.length < 12 - real.length){
+        const f = makePseudoWord(); if (!AWL.includes(f) && !fake.includes(f)) fake.push(f);
+      }
+      const items = shuffle([...real.map(w=>({w, real:true})), ...fake.map(w=>({w, real:false}))]);
+      return items;
+    }
+
+    function buildListenType(p){
+      // Возьмём одно предложение из параграфа
+      const sentence = p.split(/[.!?]/).map(s=>s.trim()).filter(Boolean)[0] + '.';
       return sentence;
     }
 
-    const markov = buildMarkov(CORPUS, 2);
+    // ===============================
+    // 5) Рендер и логика UI
+    // ===============================
+    const taskArea = document.getElementById('taskArea');
+    const feedback = document.getElementById('feedback');
+    const typeEl = document.getElementById('type');
+    const topicTag = document.getElementById('topicTag');
 
-    // ===== 2) Выбор слова для пропуска (приоритет — академическая лексика) =====
-    const ACADEMIC = new Set([
-      "evidence","systematic","practice","technology","communication","information","exchange",
-      "researchers","privacy","security","policy","environmental","studies","indicate","urban",
-      "reduce","emissions","improve","health","campaigns","awareness","preventive","behaviour",
-      "universities","innovation","collaboration","critical","thinking","economic","automation",
-      "efficiency","displace","cultural","institutions","heritage","creative","expression",
-      "dialogue","scientific","analysis","reliable","transparent","interpretation","ethical",
-      "guidelines","organizations","responsibility","mobility","wellbeing","literacy","evaluate",
-      "misinformation","allocate","infrastructure","development","clinical","research","treatment",
-      "sustainable","transport","policies","equity","benefits","digital","tools","facilitate","remote","inequality"
-    ]);
+    let CURRENT = null; // {type, key, data}
 
-    // стоп-слова (прятать их слишком легко — используем как запасной вариант)
-    const STOP = new Set(["the","a","an","and","or","but","in","on","at","to","of","for","with","by","from","that","this","these","those","is","are","was","were"]);
-
-    function pickClozeToken(sentence) {
-      const rawTokens = sentence.split(/\b/); // сохраняем пунктуацию
-      // список {idx, token} только для слов
-      const words = [];
-      for (let i = 0; i < rawTokens.length; i++) {
-        const w = rawTokens[i];
-        if (/^[A-Za-z][A-Za-z-]*$/.test(w)) {
-          words.push({ idx: i, token: w });
+    function newTask(){
+      feedback.textContent = '';
+      // пробуем сгенерировать уникальное задание
+      for(let attempt=0; attempt<50; attempt++){
+        const {topic, paragraph} = genParagraph();
+        const kind = rand(['CLOZE','SELECT','LISTEN_TYPE']);
+        let key, html;
+        if (kind==='CLOZE'){
+          const cl = buildCloze(paragraph);
+          key = `C|${hash(paragraph)}|${hash(cl.answers.join('|'))}`;
+          if (isUsed(key)) continue;
+          typeEl.textContent = 'Read & Complete (Cloze)';
+          topicTag.textContent = topic;
+          taskArea.className = 'cloze';
+          taskArea.innerHTML = cl.html;
+          CURRENT = {type:kind, key, answers: cl.answers.map(a=>a.toLowerCase())};
+          remember(key); break;
         }
-      }
-      // 1) пробуем найти академическое слово
-      const academicCandidates = words.filter(w => ACADEMIC.has(w.token.toLowerCase()));
-      let choice = academicCandidates.length
-        ? academicCandidates[Math.floor(Math.random() * academicCandidates.length)]
-        : null;
-
-      // 2) иначе — слово длиной > 6
-      if (!choice) {
-        const longWords = words.filter(w => w.token.length >= 7 && !STOP.has(w.token.toLowerCase()));
-        if (longWords.length) choice = longWords[Math.floor(Math.random() * longWords.length)];
-      }
-      // 3) иначе — любое не стоп-слово
-      if (!choice) {
-        const nonStop = words.filter(w => !STOP.has(w.token.toLowerCase()));
-        if (nonStop.length) choice = nonStop[Math.floor(Math.random() * nonStop.length)];
-      }
-      // 4) крайний случай — возьмем первое слово
-      if (!choice && words.length) choice = words[0];
-
-      if (!choice) return { clozeText: sentence, answer: "" };
-
-      const answer = choice.token;
-      rawTokens[choice.idx] = "_____";
-      return { clozeText: rawTokens.join(""), answer };
-    }
-
-    // ===== 3) Логика задания и проверка =====
-    let currentAnswer = "";
-    let fullSentence = "";
-
-    function newTask() {
-      fullSentence = generateSentence(markov);
-      const { clozeText, answer } = pickClozeToken(fullSentence);
-      currentAnswer = answer.toLowerCase();
-      document.getElementById("passage").innerText = "Сгенерировано: " + fullSentence;
-      document.getElementById("task").innerText = clozeText;
-      document.getElementById("answer").value = "";
-      document.getElementById("result").innerText = "";
-      document.getElementById("answer").focus();
-    }
-
-    function check() {
-      const user = document.getElementById("answer").value.trim().toLowerCase();
-      const res = document.getElementById("result");
-      if (!currentAnswer) { res.innerText = "Нет активного задания. Нажми «Новое задание»."; return; }
-      if (user === currentAnswer) {
-        res.innerText = "✅ Правильно!";
-      } else {
-        // небольшая толерантность: игнорируем разницу в дефисах/регистре
-        const norm = (s)=> s.replace(/-/g,"").toLowerCase();
-        if (norm(user) === norm(currentAnswer)) {
-          res.innerText = "✅ Правильно!";
-        } else {
-          res.innerHTML = `❌ Неправильно. Правильный ответ: <code>${currentAnswer}</code>`;
+        if (kind==='SELECT'){
+          const items = buildSelect();
+          key = `S|${hash(items.map(x=>x.w).join('|'))}`;
+          if (isUsed(key)) continue;
+          typeEl.textContent = 'Read & Select (Real words)';
+          topicTag.textContent = topic;
+          taskArea.className = 'select';
+          taskArea.innerHTML = `<div class="muted">Выбери только настоящие английские слова:</div><div class="options">${items.map((it,i)=>`<div class="opt" data-idx="${i}">${it.w}</div>`).join('')}</div>`;
+          document.querySelectorAll('.opt').forEach(el=>{
+            el.addEventListener('click',()=> el.classList.toggle('selected'));
+          });
+          CURRENT = {type:kind, key, items};
+          remember(key); break;
+        }
+        if (kind==='LISTEN_TYPE'){
+          const sent = buildListenType(paragraph);
+          key = `L|${hash(sent)}`;
+          if (isUsed(key)) continue;
+          typeEl.textContent = 'Listen & Type';
+          topicTag.textContent = topic;
+          taskArea.className = 'listen';
+          taskArea.innerHTML = `<div class="muted">Нажми «▶︎ Произнести», прослушай и напиши фразу дословно.</div>
+            <div class="bar" style="margin:8px 0;">
+              <button id="speakBtn" class="secondary">▶︎ Произнести</button>
+              <input id="listenInput" placeholder="Введите услышанное" />
+            </div>`;
+          document.getElementById('speakBtn').addEventListener('click', ()=> speak(sent));
+          CURRENT = {type:kind, key, sentence: sent.toLowerCase().replace(/\s+/g,' ').trim()};
+          remember(key); break;
         }
       }
     }
 
-    document.getElementById("newBtn").addEventListener("click", newTask);
-    document.getElementById("checkBtn").addEventListener("click", check);
-    document.getElementById("answer").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") check();
-    });
+    function check(){
+      if (!CURRENT){ feedback.textContent = 'Сначала создайте задание.'; return; }
+      if (CURRENT.type==='CLOZE'){
+        const inputs = Array.from(taskArea.querySelectorAll('input'));
+        if (!inputs.length){ feedback.textContent = 'Нет полей для ответа.'; return; }
+        const user = inputs.map(i=>i.value.trim().toLowerCase());
+        let ok = true; let wrongAt = -1;
+        for (let i=0;i<user.length;i++){ if (user[i]!==CURRENT.answers[i]){ ok=false; wrongAt=i; break; } }
+        feedback.innerHTML = ok? '✅ Правильно!' : `❌ Ошибка в поле ${wrongAt+1}. Правильно: <code>${CURRENT.answers[wrongAt]}</code>`;
+      } else if (CURRENT.type==='SELECT'){
+        const selectedIdx = new Set(Array.from(document.querySelectorAll('.opt.selected')).map(el=>+el.dataset.idx));
+        const allCorrect = CURRENT.items.every((it,idx)=> it.real === selectedIdx.has(idx));
+        const correctCount = CURRENT.items.filter(it=>it.real).length;
+        const chosenCorrect = CURRENT.items.filter((it,idx)=> it.real && selectedIdx.has(idx)).length;
+        const wrongChosen = CURRENT.items.filter((it,idx)=> !it.real && selectedIdx.has(idx)).length;
+        feedback.innerHTML = allCorrect ? '✅ Верно: все реальные слова выбраны корректно.' : `ℹ️ Реальных слов: <b>${correctCount}</b>. Выбрано правильно: <b>${chosenCorrect}</b>, лишних: <b>${wrongChosen}</b>.`;
+      } else if (CURRENT.type==='LISTEN_TYPE'){
+        const field = document.getElementById('listenInput'); if (!field){ feedback.textContent = 'Нет поля для ответа.'; return; }
+        const user = field.value.trim().toLowerCase().replace(/\s+/g,' ');
+        const gold = CURRENT.sentence;
+        if (!user){ feedback.textContent = 'Введите ответ.'; return; }
+        // мягкая проверка: игнорируем двойные пробелы и пунктуацию
+        const norm = s=> s.replace(/[.,!?;:]/g,'').trim();
+        feedback.innerHTML = norm(user)===norm(gold) ? '✅ Правильно!' : `❌ Неправильно. Правильный ответ: <code>${gold}</code>`;
+      }
+    }
 
-    // старт
+    function reveal(){
+      if (!CURRENT){ feedback.textContent = 'Сначала создайте задание.'; return; }
+      if (CURRENT.type==='CLOZE'){
+        feedback.innerHTML = 'Ответы: ' + CURRENT.answers.map(a=>`<code>${a}</code>`).join(', ');
+      } else if (CURRENT.type==='SELECT'){
+        const outs = CURRENT.items.map(it=> `${it.w}${it.real?'✅':'❌'}`);
+        feedback.innerHTML = outs.join(' · ');
+      } else if (CURRENT.type==='LISTEN_TYPE'){
+        feedback.innerHTML = `Фраза: <code>${CURRENT.sentence}</code>`;
+      }
+    }
+
+    function resetHistory(){
+      if (confirm('Сбросить историю уникальности? Задания могут начать повторяться.')){
+        USED = new Set(); localStorage.removeItem(STORE_KEY); feedback.textContent = 'История сброшена.';
+      }
+    }
+
+    function sampleUnique(arr, k){
+      const a = arr.slice(); const out=[]; while(out.length<k && a.length){ out.push(a.splice(Math.floor(Math.random()*a.length),1)[0]); } return out;
+    }
+    function shuffle(a){ const b=a.slice(); for (let i=b.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]];} return b; }
+    function makePseudoWord(){
+      const onset = ['bl','br','cr','dr','fl','fr','gl','gr','pl','pr','sn','st','tr','cl','spr','str','sk','sp','sl'];
+      const vowel = ['a','e','i','o','u','ai','ea','oo','ou','oi'];
+      const coda = ['b','d','g','k','l','m','n','r','t','ct','nd','st','nt','rk','mp'];
+      let w = rand(onset) + rand(vowel) + (Math.random()<0.7? rand(coda) : '');
+      if (Math.random()<0.3) w += rand(vowel);
+      if (Math.random()<0.25) w += rand(coda);
+      return w;
+    }
+
+    function speak(text){
+      try { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang='en-US'; u.rate=0.95; window.speechSynthesis.speak(u); }
+      catch(e){ alert('Speech Synthesis API недоступен в этом браузере'); }
+    }
+
+    // Кнопки
+    document.getElementById('newBtn').addEventListener('click', newTask);
+    document.getElementById('checkBtn').addEventListener('click', check);
+    document.getElementById('revealBtn').addEventListener('click', reveal);
+    document.getElementById('resetBtn').addEventListener('click', resetHistory);
+
+    // Первый автозапуск
     newTask();
   </script>
+
+  <!--
+  ⚙️ Опционально: если захочешь настоящую нейросеть
+  1) На статическом сайте это тяжело: модели весят сотни МБ. 
+  2) Можно подключить внешний API (собственный сервер или любой LLM-провайдер) и в fetch() получать свежие предложения.
+  3) В этом файле можно добавить fetch к своему эндпоинту и подменять genParagraph().
+  Локальный генератор выше уже даёт огромную комбинаторику + уникальность через localStorage.
+  -->
 </body>
 </html>
