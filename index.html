@@ -1,74 +1,195 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>DET Practice</title>
+  <meta charset="UTF-8" />
+  <title>DET Practice — AI Cloze</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; }
-    h1 { color: #333; }
-    #task { margin-top: 20px; font-size: 18px; }
-    input { padding: 5px; font-size: 16px; }
-    button { margin-top: 10px; padding: 6px 12px; font-size: 16px; }
+    :root { color-scheme: dark light; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 40px; max-width: 900px; }
+    h1 { margin: 0 0 6px; }
+    p.hint { margin: 6px 0 20px; color: #666; }
+    #passage { margin: 14px 0 8px; font-size: 18px; line-height: 1.6; }
+    #task { margin: 8px 0 16px; font-size: 20px; line-height: 1.7; }
+    input, button { font-size: 16px; padding: 10px 12px; }
+    input { min-width: 220px; }
+    button { margin-right: 8px; cursor: pointer; }
+    #result { margin-top: 10px; font-weight: 600; }
+    .muted { color:#777; font-size: 14px; }
+    code { background: rgba(127,127,127,.12); padding: 2px 6px; border-radius: 6px; }
   </style>
 </head>
 <body>
-  <h1>Read & Complete Practice</h1>
-  <p>Заполни пропуск:</p>
+  <h1>Read & Complete — AI Generator</h1>
+  <p class="hint">Каждый раз генерируется новый абзац. Заполни пропуск и нажми «Проверить».</p>
+
+  <div id="passage" class="muted"></div>
   <div id="task"></div>
-  <input id="answer" type="text" placeholder="Ваш ответ">
-  <button onclick="checkAnswer()">Проверить</button>
-  <button onclick="generateTask()">Новое задание</button>
-  <p id="result"></p>
 
-<script>
-  const nouns = ["technology", "education", "communication", "innovation", "privacy", "infrastructure"];
-  const verbs = ["improve", "undermine", "facilitate", "accelerate", "affect", "generate"];
-  const adjs  = ["important", "controversial", "transformative", "beneficial", "harmful", "essential"];
-  const effects = ["progress", "confusion", "efficiency", "inequality", "opportunities", "distraction"];
+  <input id="answer" type="text" placeholder="Ваш ответ" autocomplete="off" />
+  <button id="checkBtn">Проверить</button>
+  <button id="newBtn">Новое задание</button>
+  <div id="result"></div>
 
-  let currentAnswer;
+  <script>
+    // ===== 1) Мини-"ИИ": марковский генератор текста =====
+    // Небольшой корпус предложений (наши, без авторских прав), на разные темы.
+    const CORPUS = `
+Education often relies on evidence based methods and systematic practice.
+Modern technology enables global communication and rapid information exchange.
+Researchers argue that privacy and security must remain a priority in digital policy.
+Environmental studies indicate that urban design can reduce emissions and improve health.
+Public health campaigns raise awareness and encourage preventive behaviour in society.
+Universities foster innovation, collaboration and critical thinking among students.
+Economic reports suggest that automation increases efficiency but may displace certain jobs.
+Cultural institutions preserve heritage while supporting creative expression and dialogue.
+Scientific analysis requires reliable data, transparent methods and careful interpretation.
+Ethical guidelines help organizations balance profit with social responsibility.
+Access to quality education significantly impacts mobility and long term wellbeing.
+Media literacy empowers citizens to evaluate sources and detect misinformation.
+Government programs allocate resources to infrastructure and community development.
+Clinical research investigates effective treatment and monitors potential side effects.
+Sustainable transport policies promote safety, equity and environmental benefits.
+Digital tools facilitate remote learning yet also introduce distraction and inequality.
+`;
 
-  function generateSentence() {
-    // Несколько шаблонов
-    const templates = [
-      `In recent years, _____ has become increasingly ${rand(adjs)}.`,
-      `One reason people _____ English is to ${rand(verbs)} ${rand(nouns)}.`,
-      `${rand(nouns)} can _____ communication but also cause ${rand(effects)}.`,
-      `Students often _____ knowledge when they focus on ${rand(nouns)}.`,
-      `Modern society depends on _____ to handle ${rand(nouns)} effectively.`
-    ];
-
-    const sentence = rand(templates);
-
-    // Определяем правильный ответ (слово в пропуске)
-    if (sentence.includes("_____ has")) currentAnswer = rand(nouns);
-    else if (sentence.includes("people _____ English")) currentAnswer = "learn";
-    else if (sentence.includes("can _____ communication")) currentAnswer = "improve";
-    else if (sentence.includes("often _____ knowledge")) currentAnswer = "gain";
-    else if (sentence.includes("depends on _____")) currentAnswer = "technology";
-
-    return sentence.replace("_____", "_____");
-  }
-
-  function rand(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-  }
-
-  function generateTask() {
-    const task = generateSentence();
-    document.getElementById("task").innerText = task;
-    document.getElementById("answer").value = "";
-    document.getElementById("result").innerText = "";
-  }
-
-  function checkAnswer() {
-    const userAnswer = document.getElementById("answer").value.trim().toLowerCase();
-    if (userAnswer === currentAnswer) {
-      document.getElementById("result").innerText = "✅ Правильно!";
-    } else {
-      document.getElementById("result").innerText = "❌ Неправильно. Правильный ответ: " + currentAnswer;
+    // Построение марковской цепи (порядок 2 — биграммы)
+    function buildMarkov(corpus, order = 2) {
+      const tokens = corpus.trim().split(/\s+/);
+      const model = new Map();
+      for (let i = 0; i <= tokens.length - order; i++) {
+        const state = tokens.slice(i, i + order).join(" ");
+        const next = tokens[i + order];
+        if (!model.has(state)) model.set(state, []);
+        model.get(state).push(next);
+      }
+      return { model, order, tokens };
     }
-  }
 
-  generateTask();
-</script>
+    function generateSentence(markov, minLen = 12, maxLen = 28) {
+      const { model, order, tokens } = markov;
+      // стартуем с случайного состояния, начинающегося с заглавной буквы
+      let startIndex = Math.floor(Math.random() * (tokens.length - order - 1));
+      let state = tokens.slice(startIndex, startIndex + order);
+      // делаем так, чтобы первая буква была заглавной
+      for (let guard = 0; guard < 50 && !/^[A-Z]/.test(state[0]); guard++) {
+        startIndex = Math.floor(Math.random() * (tokens.length - order - 1));
+        state = tokens.slice(startIndex, startIndex + order);
+      }
+
+      const out = [...state];
+      while (out.length < maxLen) {
+        const key = state.join(" ");
+        const options = model.get(key);
+        if (!options) break;
+        const next = options[Math.floor(Math.random() * options.length)];
+        out.push(next);
+        state = [...state.slice(1), next];
+        if (out.length >= minLen && /[.!?]$/.test(next)) break;
+      }
+      // Чистим пробелы перед пунктуацией
+      let sentence = out.join(" ")
+        .replace(/\s+([,.;:!?])/g, "$1")
+        .replace(/\s+/g, " ");
+      // Если нет финальной точки — добавим.
+      if (!/[.!?]$/.test(sentence)) sentence += ".";
+      return sentence;
+    }
+
+    const markov = buildMarkov(CORPUS, 2);
+
+    // ===== 2) Выбор слова для пропуска (приоритет — академическая лексика) =====
+    const ACADEMIC = new Set([
+      "evidence","systematic","practice","technology","communication","information","exchange",
+      "researchers","privacy","security","policy","environmental","studies","indicate","urban",
+      "reduce","emissions","improve","health","campaigns","awareness","preventive","behaviour",
+      "universities","innovation","collaboration","critical","thinking","economic","automation",
+      "efficiency","displace","cultural","institutions","heritage","creative","expression",
+      "dialogue","scientific","analysis","reliable","transparent","interpretation","ethical",
+      "guidelines","organizations","responsibility","mobility","wellbeing","literacy","evaluate",
+      "misinformation","allocate","infrastructure","development","clinical","research","treatment",
+      "sustainable","transport","policies","equity","benefits","digital","tools","facilitate","remote","inequality"
+    ]);
+
+    // стоп-слова (прятать их слишком легко — используем как запасной вариант)
+    const STOP = new Set(["the","a","an","and","or","but","in","on","at","to","of","for","with","by","from","that","this","these","those","is","are","was","were"]);
+
+    function pickClozeToken(sentence) {
+      const rawTokens = sentence.split(/\b/); // сохраняем пунктуацию
+      // список {idx, token} только для слов
+      const words = [];
+      for (let i = 0; i < rawTokens.length; i++) {
+        const w = rawTokens[i];
+        if (/^[A-Za-z][A-Za-z-]*$/.test(w)) {
+          words.push({ idx: i, token: w });
+        }
+      }
+      // 1) пробуем найти академическое слово
+      const academicCandidates = words.filter(w => ACADEMIC.has(w.token.toLowerCase()));
+      let choice = academicCandidates.length
+        ? academicCandidates[Math.floor(Math.random() * academicCandidates.length)]
+        : null;
+
+      // 2) иначе — слово длиной > 6
+      if (!choice) {
+        const longWords = words.filter(w => w.token.length >= 7 && !STOP.has(w.token.toLowerCase()));
+        if (longWords.length) choice = longWords[Math.floor(Math.random() * longWords.length)];
+      }
+      // 3) иначе — любое не стоп-слово
+      if (!choice) {
+        const nonStop = words.filter(w => !STOP.has(w.token.toLowerCase()));
+        if (nonStop.length) choice = nonStop[Math.floor(Math.random() * nonStop.length)];
+      }
+      // 4) крайний случай — возьмем первое слово
+      if (!choice && words.length) choice = words[0];
+
+      if (!choice) return { clozeText: sentence, answer: "" };
+
+      const answer = choice.token;
+      rawTokens[choice.idx] = "_____";
+      return { clozeText: rawTokens.join(""), answer };
+    }
+
+    // ===== 3) Логика задания и проверка =====
+    let currentAnswer = "";
+    let fullSentence = "";
+
+    function newTask() {
+      fullSentence = generateSentence(markov);
+      const { clozeText, answer } = pickClozeToken(fullSentence);
+      currentAnswer = answer.toLowerCase();
+      document.getElementById("passage").innerText = "Сгенерировано: " + fullSentence;
+      document.getElementById("task").innerText = clozeText;
+      document.getElementById("answer").value = "";
+      document.getElementById("result").innerText = "";
+      document.getElementById("answer").focus();
+    }
+
+    function check() {
+      const user = document.getElementById("answer").value.trim().toLowerCase();
+      const res = document.getElementById("result");
+      if (!currentAnswer) { res.innerText = "Нет активного задания. Нажми «Новое задание»."; return; }
+      if (user === currentAnswer) {
+        res.innerText = "✅ Правильно!";
+      } else {
+        // небольшая толерантность: игнорируем разницу в дефисах/регистре
+        const norm = (s)=> s.replace(/-/g,"").toLowerCase();
+        if (norm(user) === norm(currentAnswer)) {
+          res.innerText = "✅ Правильно!";
+        } else {
+          res.innerHTML = `❌ Неправильно. Правильный ответ: <code>${currentAnswer}</code>`;
+        }
+      }
+    }
+
+    document.getElementById("newBtn").addEventListener("click", newTask);
+    document.getElementById("checkBtn").addEventListener("click", check);
+    document.getElementById("answer").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") check();
+    });
+
+    // старт
+    newTask();
+  </script>
+</body>
+</html>
