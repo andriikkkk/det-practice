@@ -20,32 +20,55 @@
   <button onclick="generateTask()">Новое задание</button>
   <p id="result"></p>
 
-  <script>
-    const tasks = [
-      {text: "In recent years, _____ has become increasingly important in education.", answer: "technology"},
-      {text: "One reason people _____ English is to study or work abroad.", answer: "learn"},
-      {text: "Technology can _____ communication but also cause distraction.", answer: "improve"}
+<script>
+  const nouns = ["technology", "education", "communication", "innovation", "privacy", "infrastructure"];
+  const verbs = ["improve", "undermine", "facilitate", "accelerate", "affect", "generate"];
+  const adjs  = ["important", "controversial", "transformative", "beneficial", "harmful", "essential"];
+  const effects = ["progress", "confusion", "efficiency", "inequality", "opportunities", "distraction"];
+
+  let currentAnswer;
+
+  function generateSentence() {
+    // Несколько шаблонов
+    const templates = [
+      `In recent years, _____ has become increasingly ${rand(adjs)}.`,
+      `One reason people _____ English is to ${rand(verbs)} ${rand(nouns)}.`,
+      `${rand(nouns)} can _____ communication but also cause ${rand(effects)}.`,
+      `Students often _____ knowledge when they focus on ${rand(nouns)}.`,
+      `Modern society depends on _____ to handle ${rand(nouns)} effectively.`
     ];
 
-    let currentTask;
+    const sentence = rand(templates);
 
-    function generateTask() {
-      currentTask = tasks[Math.floor(Math.random() * tasks.length)];
-      document.getElementById("task").innerText = currentTask.text;
-      document.getElementById("answer").value = "";
-      document.getElementById("result").innerText = "";
+    // Определяем правильный ответ (слово в пропуске)
+    if (sentence.includes("_____ has")) currentAnswer = rand(nouns);
+    else if (sentence.includes("people _____ English")) currentAnswer = "learn";
+    else if (sentence.includes("can _____ communication")) currentAnswer = "improve";
+    else if (sentence.includes("often _____ knowledge")) currentAnswer = "gain";
+    else if (sentence.includes("depends on _____")) currentAnswer = "technology";
+
+    return sentence.replace("_____", "_____");
+  }
+
+  function rand(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function generateTask() {
+    const task = generateSentence();
+    document.getElementById("task").innerText = task;
+    document.getElementById("answer").value = "";
+    document.getElementById("result").innerText = "";
+  }
+
+  function checkAnswer() {
+    const userAnswer = document.getElementById("answer").value.trim().toLowerCase();
+    if (userAnswer === currentAnswer) {
+      document.getElementById("result").innerText = "✅ Правильно!";
+    } else {
+      document.getElementById("result").innerText = "❌ Неправильно. Правильный ответ: " + currentAnswer;
     }
+  }
 
-    function checkAnswer() {
-      const userAnswer = document.getElementById("answer").value.trim().toLowerCase();
-      if (userAnswer === currentTask.answer) {
-        document.getElementById("result").innerText = "✅ Правильно!";
-      } else {
-        document.getElementById("result").innerText = "❌ Неправильно. Правильный ответ: " + currentTask.answer;
-      }
-    }
-
-    generateTask();
-  </script>
-</body>
-</html>
+  generateTask();
+</script>
